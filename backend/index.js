@@ -9,7 +9,7 @@ app.use(express.json());
 app.use(cors());
 
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ port: 8080  });
+const wss = new WebSocket.Server({ server });
 
 let waitingPlayer = null;
 let games = {};
@@ -258,4 +258,5 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
-server.listen(3001, () => console.log("HTTP API running on port 3001"));
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => console.log(`Server (HTTP + WS) running on port ${PORT}`));
