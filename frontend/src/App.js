@@ -12,7 +12,8 @@ function App() {
 
   const connect = () => {
     if (!username) return alert("Enter username first");
-    const socket = new WebSocket("ws://localhost:8080");
+    const socket = new WebSocket("wss://four-in-a-row-backend-mwjq.onrender.com");
+
 
     socket.onopen = () => {
       console.log("Connected to backend");
