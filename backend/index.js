@@ -1,5 +1,15 @@
+const express = require("express");
+const cors = require("cors");
+const http = require("http");
 const WebSocket = require("ws");
-const wss = new WebSocket.Server({ port: 8080 });
+const { recordWin, getLeaderboard, recordCompletedGame } = require("./db");
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 let waitingPlayer = null;
 let games = {};
@@ -14,7 +24,6 @@ function createEmptyBoard() {
 // Return {result, cells: winningCells or []}
 function checkGameResult(board, player) {
   const rows = board.length, cols = board[0].length;
-  // Helper to collect winning cells if found
   const directions = [
     { dr: 0, dc: 1 },  // Horizontal
     { dr: 1, dc: 0 },  // Vertical
@@ -57,7 +66,6 @@ function availableColumns(board) {
   return cols;
 }
 
-// Start new game and set up everything needed
 function startGame(p1, p2) {
   const id = gameIdCounter++;
   const board = createEmptyBoard();
@@ -71,14 +79,11 @@ function startGame(p1, p2) {
     winner: null,
     winCells: []
   };
-  if (p1)
-    p1.send(JSON.stringify({ type: "start", gameId: id, board, currentPlayer: "R", color: "R", opponent: p2?.username || "bot" }));
-  if (p2)
-    p2.send(JSON.stringify({ type: "start", gameId: id, board, currentPlayer: "R", color: "Y", opponent: p1.username }));
+  if (p1) p1.send(JSON.stringify({ type: "start", gameId: id, board, currentPlayer: "R", color: "R", opponent: p2?.username || "bot" }));
+  if (p2) p2.send(JSON.stringify({ type: "start", gameId: id, board, currentPlayer: "R", color: "Y", opponent: p1.username }));
   if (!p2) setTimeout(() => botMove(id), 1000);
 }
 
-// Bot logic
 function botMove(id) {
   const game = games[id];
   if (!game || game.status !== "active") return;
@@ -96,12 +101,7 @@ function botMove(id) {
         endGame(id, result === "win" ? "bot" : "draw", cells);
       }
       game.currentPlayer = "R";
-      if (game.players[0]) {
-        game.players[0].send(JSON.stringify({
-          type: "update",
-          board, currentPlayer: game.currentPlayer, result, winner: result === "win" ? "bot" : null, winCells: cells
-        }));
-      }
+      game.players[0]?.send(JSON.stringify({ type: "update", board, currentPlayer: game.currentPlayer, result, winner: result === "win" ? "bot" : null, winCells: cells }));
       break;
     }
   }
@@ -114,12 +114,22 @@ function endGame(id, winner, winCells = []) {
   game.winner = winner;
   game.winCells = winCells;
   console.log("ENDING GAME:", id, "WINNER:", winner);
+
+  if (winner !== "bot" && winner !== "draw") {
+    recordWin(winner).catch(console.error);
+  }
+
+  const player1 = game.usernames[0];
+  const player2 = game.usernames[1] || "bot";
+  recordCompletedGame(player1, player2, winner).catch(console.error);
+
   game.players.forEach(p => {
     if (p && p.readyState === p.OPEN) {
       p.send(JSON.stringify({ type: "game_over", winner, winCells }));
     }
   });
-  setTimeout(() => { delete games[id]; }, 1000); // Clean up quickly
+
+  setTimeout(() => { delete games[id]; }, 1000);
 }
 
 wss.on("connection", (ws) => {
@@ -128,7 +138,6 @@ wss.on("connection", (ws) => {
 
     if (data.type === "join") {
       ws.username = data.username;
-      // Only reconnect allowed if game is active and for this username
       let reconnected = false;
       for (const [id, game] of Object.entries(games)) {
         const idx = game.usernames.indexOf(ws.username);
@@ -154,7 +163,7 @@ wss.on("connection", (ws) => {
         }
       }
       if (reconnected) return;
-      // Otherwise: always new game with waiting/new
+
       if (!waitingPlayer) {
         waitingPlayer = ws;
         setTimeout(() => {
@@ -173,7 +182,6 @@ wss.on("connection", (ws) => {
       const game = games[data.gameId];
       if (!game || game.status !== "active") return;
       if (game.currentPlayer !== data.player) return;
-      // Prevent moves if win/draw just occurred!
       const { result: r1 } = checkGameResult(game.board, "R");
       const { result: r2 } = checkGameResult(game.board, "Y");
       if (["win", "draw"].includes(r1) || ["win", "draw"].includes(r2)) return;
@@ -219,7 +227,6 @@ wss.on("connection", (ws) => {
           currentPlayer: game.currentPlayer, result, winCells: []
         }))
       );
-      // Bot turn
       if (!game.players[1] && game.currentPlayer === "Y") setTimeout(() => botMove(data.gameId), 500);
     }
   });
@@ -241,4 +248,14 @@ wss.on("connection", (ws) => {
   });
 });
 
-console.log("WebSocket server running on ws://localhost:8080");
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const data = await getLeaderboard();
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching leaderboard:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+server.listen(3001, () => console.log("HTTP API running on port 3001"));

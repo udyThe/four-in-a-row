@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import './App.css';
+import "./App.css";
+import Leaderboard from "./Leaderboard";
 
 function App() {
   const [ws, setWs] = useState(null);
@@ -15,7 +16,7 @@ function App() {
 
   const connect = () => {
     if (!username) return alert("Enter username first");
-    const socket = new WebSocket("https://four-in-a-row-backend-mwjq.onrender.com");
+    const socket = new WebSocket("ws://localhost:3001");
 
     socket.onopen = () => {
       socket.send(JSON.stringify({ type: "join", username }));
@@ -66,7 +67,6 @@ function App() {
     );
   };
 
-  // No optional chaining for compatibility
   const winCellKeys =
     winCells && Array.isArray(winCells)
       ? winCells.map(([r, c]) => r + "," + c)
@@ -101,14 +101,12 @@ function App() {
           <h3>Opponent: {opponent}</h3>
           <h3>Status: {result}</h3>
 
-          {/* Show current turn dynamically during ongoing game */}
           {result === "ongoing" && (
             <h3 style={{ color: "#007bff" }}>
               Current Turn: {currentPlayer === "R" ? "Red" : "Yellow"}
             </h3>
           )}
 
-          {/* Winner shows after game ends */}
           {winner && (
             <h2 style={{ color: "green" }}>
               {winner === "draw" ? "It’s a draw!" : "Winner: " + winner}
@@ -126,7 +124,7 @@ function App() {
           >
             {board.map((row, rIdx) =>
               row.map((cell, cIdx) => {
-                const key = rIdx + "," + cIdx;
+                const key = `${rIdx},${cIdx}`;
                 const highlight = winCellKeys.includes(key);
                 return (
                   <div
@@ -155,6 +153,9 @@ function App() {
               })
             )}
           </div>
+
+          {/* Leaderboard displayed below grid */}
+          <Leaderboard refreshTrigger={winner} />
         </div>
       )}
     </div>
