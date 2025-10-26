@@ -5,7 +5,7 @@ const wss = new WebSocket.Server({ port: 8080 });
 // Waiting player queue
 let waitingPlayer = null;
 
-// Active games: { gameId: { board, players, currentPlayer } }
+// Active games: { gameId: { board, players, currentPlayer, disconnected } }
 let games = {};
 let gameIdCounter = 1;
 
@@ -26,39 +26,52 @@ function checkGameResult(board, player) {
       if (board[r][c] !== player) continue;
 
       // Horizontal
-      if (c + 3 < cols &&
-          board[r][c+1] === player &&
-          board[r][c+2] === player &&
-          board[r][c+3] === player) return "win";
+      if (
+        c + 3 < cols &&
+        board[r][c + 1] === player &&
+        board[r][c + 2] === player &&
+        board[r][c + 3] === player
+      )
+        return "win";
 
       // Vertical
-      if (r + 3 < rows &&
-          board[r+1][c] === player &&
-          board[r+2][c] === player &&
-          board[r+3][c] === player) return "win";
+      if (
+        r + 3 < rows &&
+        board[r + 1][c] === player &&
+        board[r + 2][c] === player &&
+        board[r + 3][c] === player
+      )
+        return "win";
 
       // Diagonal /
-      if (r - 3 >= 0 && c + 3 < cols &&
-          board[r-1][c+1] === player &&
-          board[r-2][c+2] === player &&
-          board[r-3][c+3] === player) return "win";
+      if (
+        r - 3 >= 0 &&
+        c + 3 < cols &&
+        board[r - 1][c + 1] === player &&
+        board[r - 2][c + 2] === player &&
+        board[r - 3][c + 3] === player
+      )
+        return "win";
 
       // Diagonal \
-      if (r + 3 < rows && c + 3 < cols &&
-          board[r+1][c+1] === player &&
-          board[r+2][c+2] === player &&
-          board[r+3][c+3] === player) return "win";
+      if (
+        r + 3 < rows &&
+        c + 3 < cols &&
+        board[r + 1][c + 1] === player &&
+        board[r + 2][c + 2] === player &&
+        board[r + 3][c + 3] === player
+      )
+        return "win";
     }
   }
 
-  if (board.every(row => row.every(cell => cell))) return "draw";
-
+  if (board.every((row) => row.every((cell) => cell))) return "draw";
   return "ongoing";
 }
 
 // Check if placing a disc in column results in a win for given player
 function canWinNext(board, col, player) {
-  const tempBoard = board.map(row => [...row]);
+  const tempBoard = board.map((row) => [...row]);
   for (let row = tempBoard.length - 1; row >= 0; row--) {
     if (!tempBoard[row][col]) {
       tempBoard[row][col] = player;
@@ -85,16 +98,36 @@ function startGame(player1, player2) {
 
   games[gameId] = {
     board,
-    players: [player1, player2], // player2 can be null (bot)
+    players: [player1, player2],
     currentPlayer: "R",
+    disconnected: {},
+    usernames: [player1.username, player2 ? player2.username : null],
   };
 
-  // Notify players that game has started
-  [player1, player2].forEach((p) => {
-    if (p) {
-      p.send(JSON.stringify({ type: "start", gameId, board, currentPlayer: "R" }));
-    }
-  });
+  // Notify players that game has started -- assign colors
+  if (player1)
+    player1.send(
+      JSON.stringify({
+        type: "start",
+        gameId,
+        board,
+        currentPlayer: "R",
+        color: "R",
+        opponent:
+          player2?.username || "bot",
+      })
+    );
+  if (player2)
+    player2.send(
+      JSON.stringify({
+        type: "start",
+        gameId,
+        board,
+        currentPlayer: "R",
+        color: "Y",
+        opponent: player1.username,
+      })
+    );
 
   console.log("Game started:", gameId);
 
@@ -146,12 +179,14 @@ function botMove(gameId) {
       const result = checkGameResult(board, botPlayer);
       game.currentPlayer = "R";
 
-      game.players[0].send(JSON.stringify({
-        type: "update",
-        board,
-        currentPlayer: game.currentPlayer,
-        result
-      }));
+      game.players[0]?.send(
+        JSON.stringify({
+          type: "update",
+          board,
+          currentPlayer: game.currentPlayer,
+          result,
+        })
+      );
       return;
     }
   }
@@ -166,6 +201,37 @@ wss.on("connection", (ws) => {
     if (data.type === "join") {
       ws.username = data.username;
 
+      // Check for reconnection
+      let reconnected = false;
+      for (const [id, game] of Object.entries(games)) {
+        const idx = game.usernames.findIndex((u) => u === ws.username);
+        // If username matches, player was in this game
+        if (
+          idx !== -1 &&
+          game.disconnected[ws.username] &&
+          Date.now() - game.disconnected[ws.username] < 30000
+        ) {
+          game.players[idx] = ws;
+          delete game.disconnected[ws.username];
+          ws.send(
+            JSON.stringify({
+              type: "resume",
+              gameId: id,
+              board: game.board,
+              currentPlayer: game.currentPlayer,
+              result: checkGameResult(game.board, "R"),
+              color: idx === 0 ? "R" : "Y",
+              opponent:
+                game.usernames[idx === 0 ? 1 : 0] || "bot",
+            })
+          );
+          reconnected = true;
+          break;
+        }
+      }
+      if (reconnected) return;
+
+      // Normal matchmaking
       if (!waitingPlayer) {
         waitingPlayer = ws;
 
@@ -177,7 +243,6 @@ wss.on("connection", (ws) => {
             waitingPlayer = null;
           }
         }, 10000);
-
       } else {
         const player1 = waitingPlayer;
         const player2 = ws;
@@ -190,10 +255,15 @@ wss.on("connection", (ws) => {
       const { gameId, colIndex, player } = data;
       const game = games[gameId];
       if (!game) return;
+      if (game.currentPlayer !== player) return; // Prevent move out of turn
+
+      // Prevent moves after win/draw
+      if (["win", "draw"].includes(checkGameResult(game.board, "R")) ||
+        ["win", "draw"].includes(checkGameResult(game.board, "Y"))
+      ) return;
 
       const board = game.board;
 
-      // Find lowest empty row in column
       let placed = false;
       for (let row = board.length - 1; row >= 0; row--) {
         if (!board[row][colIndex]) {
@@ -211,17 +281,23 @@ wss.on("connection", (ws) => {
       // Broadcast update to both players
       game.players.forEach((p) => {
         if (p) {
-          p.send(JSON.stringify({
-            type: "update",
-            board,
-            currentPlayer: game.currentPlayer,
-            result
-          }));
+          p.send(
+            JSON.stringify({
+              type: "update",
+              board,
+              currentPlayer: game.currentPlayer,
+              result,
+            })
+          );
         }
       });
 
       // If bot turn
-      if (!game.players[1] && game.currentPlayer === "Y" && result === "ongoing") {
+      if (
+        !game.players[1] &&
+        game.currentPlayer === "Y" &&
+        result === "ongoing"
+      ) {
         setTimeout(() => botMove(gameId), 500);
       }
     }
@@ -229,6 +305,40 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Player disconnected");
+
+    // Find the player in any game
+    for (const [id, game] of Object.entries(games)) {
+      const idx = game.players.indexOf(ws);
+      if (idx !== -1) {
+        const username = ws.username;
+        if (username) {
+          game.disconnected[username] = Date.now();
+          setTimeout(() => {
+            // After 30s, if not reconnected, forfeit
+            if (
+              game.disconnected[username] &&
+              Date.now() - game.disconnected[username] >= 30000
+            ) {
+              const otherPlayerIdx = idx === 0 ? 1 : 0;
+              const winner =
+                (game.players[otherPlayerIdx] &&
+                  game.players[otherPlayerIdx].username) ||
+                "bot";
+              // Notify both players if connected
+              game.players.forEach((p) => {
+                if (p && p.readyState === p.OPEN) {
+                  p.send(
+                    JSON.stringify({ type: "forfeit", winner })
+                  );
+                }
+              });
+              delete games[id];
+            }
+          }, 30000);
+        }
+        break;
+      }
+    }
   });
 });
 

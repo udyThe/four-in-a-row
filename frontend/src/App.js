@@ -7,12 +7,12 @@ function App() {
   const [board, setBoard] = useState(Array(6).fill(Array(7).fill(null)));
   const [currentPlayer, setCurrentPlayer] = useState("R");
   const [result, setResult] = useState("ongoing");
+  const [myColor, setMyColor] = useState("");
+  const [opponent, setOpponent] = useState("");
 
-  // Connect to WebSocket and send join message
   const connect = () => {
     if (!username) return alert("Enter username first");
-
-    const socket = new WebSocket("https://four-in-a-row-backend-mwjq.onrender.com");
+    const socket = new WebSocket("ws://localhost:8080");
 
     socket.onopen = () => {
       console.log("Connected to backend");
@@ -22,11 +22,13 @@ function App() {
     socket.onmessage = (msg) => {
       const data = JSON.parse(msg.data);
 
-      if (data.type === "start") {
+      if (data.type === "start" || data.type === "resume") {
         setGameId(data.gameId);
         setBoard(data.board);
         setCurrentPlayer(data.currentPlayer);
-        setResult("ongoing");
+        setResult(data.result || "ongoing");
+        setMyColor(data.color);
+        setOpponent(data.opponent || "");
       }
 
       if (data.type === "update") {
@@ -34,21 +36,27 @@ function App() {
         setCurrentPlayer(data.currentPlayer);
         setResult(data.result);
       }
+
+      if (data.type === "forfeit") {
+        setResult(`forfeit - winner: ${data.winner}`);
+      }
     };
 
     setWs(socket);
   };
 
-  // Handle column click
   const handleClick = (colIndex) => {
     if (!ws || result !== "ongoing") return;
+    if (currentPlayer !== myColor) return; // Only allow move if it's your turn
 
-    ws.send(JSON.stringify({
-      type: "move",
-      gameId,
-      colIndex,
-      player: currentPlayer
-    }));
+    ws.send(
+      JSON.stringify({
+        type: "move",
+        gameId,
+        colIndex,
+        player: myColor,
+      })
+    );
   };
 
   return (
@@ -68,14 +76,18 @@ function App() {
       {ws && (
         <div>
           <h3>Username: {username}</h3>
-          <h3>Current Player: {currentPlayer}</h3>
+          <h3>Your disc color: {myColor === "R" ? "Red" : myColor === "Y" ? "Yellow" : ""}</h3>
+          <h3>Opponent: {opponent}</h3>
+          <h3>Current Turn: {currentPlayer === "R" ? "Red" : "Yellow"}</h3>
           <h3>Result: {result}</h3>
 
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(7, 50px)",
-            gap: 2
-          }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 50px)",
+              gap: 2,
+            }}
+          >
             {board.map((row, rIdx) =>
               row.map((cell, cIdx) => (
                 <div
@@ -86,11 +98,21 @@ function App() {
                     height: 50,
                     border: "1px solid black",
                     borderRadius: 5,
-                    backgroundColor: cell === "R" ? "red" : cell === "Y" ? "yellow" : "white",
+                    backgroundColor:
+                      cell === "R"
+                        ? "red"
+                        : cell === "Y"
+                        ? "yellow"
+                        : "white",
                     display: "flex",
                     justifyContent: "center",
                     alignItems: "center",
-                    cursor: "pointer"
+                    cursor:
+                      !ws ||
+                      result !== "ongoing" ||
+                      currentPlayer !== myColor
+                        ? "not-allowed"
+                        : "pointer",
                   }}
                 />
               ))
