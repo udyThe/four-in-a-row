@@ -1,12 +1,11 @@
 const { Pool } = require("pg");
 
-// Use DATABASE_URL for production, fallback to local settings for development
+// Use DATABASE_URL from environment (Render production) or fallback to local
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://postgres:8329@localhost:5432/four_in_a_row",
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false, // SSL required in Render
 });
 
-// Record a win for a player
 async function recordWin(username) {
   await pool.query(
     `INSERT INTO leaderboard (username, wins)
@@ -17,7 +16,6 @@ async function recordWin(username) {
   );
 }
 
-// Get top 10 leaderboard
 async function getLeaderboard() {
   const result = await pool.query(
     `SELECT * FROM leaderboard ORDER BY wins DESC LIMIT 10`
@@ -25,7 +23,6 @@ async function getLeaderboard() {
   return result.rows;
 }
 
-// Record a completed game
 async function recordCompletedGame(player1, player2, winner) {
   await pool.query(
     "INSERT INTO completed_games (player1, player2, winner) VALUES ($1, $2, $3)",

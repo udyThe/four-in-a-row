@@ -18,8 +18,8 @@ function App() {
   process.env.REACT_APP_WS_URL ||
   (process.env.NODE_ENV === "production"
     ? "wss://four-in-a-row-backend-mwjq.onrender.com"
-    : "ws://localhost:8080");
-    
+    : "ws://localhost:3001");
+
   const connect = () => {
     if (!username) return alert("Enter username first");
     const socket = new WebSocket(WS_URL);
