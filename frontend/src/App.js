@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import './App.css';
 
 function App() {
   const [ws, setWs] = useState(null);
@@ -9,38 +10,44 @@ function App() {
   const [result, setResult] = useState("ongoing");
   const [myColor, setMyColor] = useState("");
   const [opponent, setOpponent] = useState("");
+  const [winner, setWinner] = useState(null);
+  const [winCells, setWinCells] = useState([]);
 
   const connect = () => {
     if (!username) return alert("Enter username first");
-    //const socket = new WebSocket("ws://localhost:8080");
     const socket = new WebSocket("https://four-in-a-row-backend-mwjq.onrender.com");
 
-
     socket.onopen = () => {
-      console.log("Connected to backend");
       socket.send(JSON.stringify({ type: "join", username }));
     };
 
     socket.onmessage = (msg) => {
       const data = JSON.parse(msg.data);
-
       if (data.type === "start" || data.type === "resume") {
         setGameId(data.gameId);
         setBoard(data.board);
         setCurrentPlayer(data.currentPlayer);
-        setResult(data.result || "ongoing");
+        setResult("ongoing");
         setMyColor(data.color);
         setOpponent(data.opponent || "");
+        setWinner(null);
+        setWinCells(data.winCells || []);
       }
-
       if (data.type === "update") {
         setBoard(data.board);
         setCurrentPlayer(data.currentPlayer);
         setResult(data.result);
+        setWinner(data.winner || null);
+        setWinCells(data.winCells || []);
       }
-
+      if (data.type === "game_over") {
+        setWinner(data.winner);
+        setResult("ended");
+        setWinCells(data.winCells || []);
+      }
       if (data.type === "forfeit") {
-        setResult(`forfeit - winner: ${data.winner}`);
+        setResult("forfeit - " + data.winner + " wins");
+        setWinCells([]);
       }
     };
 
@@ -48,9 +55,7 @@ function App() {
   };
 
   const handleClick = (colIndex) => {
-    if (!ws || result !== "ongoing") return;
-    if (currentPlayer !== myColor) return; // Only allow move if it's your turn
-
+    if (!ws || result !== "ongoing" || currentPlayer !== myColor) return;
     ws.send(
       JSON.stringify({
         type: "move",
@@ -61,63 +66,93 @@ function App() {
     );
   };
 
+  // No optional chaining for compatibility
+  const winCellKeys =
+    winCells && Array.isArray(winCells)
+      ? winCells.map(([r, c]) => r + "," + c)
+      : [];
+
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ padding: 20, textAlign: "center" }}>
       {!ws && (
         <div>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Enter username"
-            style={{ padding: 5, marginRight: 10 }}
+            style={{
+              padding: 5,
+              marginRight: 10,
+            }}
           />
-          <button onClick={connect} style={{ padding: 5 }}>Start Game</button>
+          <button onClick={connect} style={{ padding: 5 }}>
+            Start Game
+          </button>
         </div>
       )}
 
       {ws && (
         <div>
-          <h3>Username: {username}</h3>
-          <h3>Your disc color: {myColor === "R" ? "Red" : myColor === "Y" ? "Yellow" : ""}</h3>
+          <h2>User: {username}</h2>
+          <h3>
+            Your color:{" "}
+            {myColor === "R" ? "Red" : myColor === "Y" ? "Yellow" : ""}
+          </h3>
           <h3>Opponent: {opponent}</h3>
-          <h3>Current Turn: {currentPlayer === "R" ? "Red" : "Yellow"}</h3>
-          <h3>Result: {result}</h3>
+          <h3>Status: {result}</h3>
+
+          {/* Show current turn dynamically during ongoing game */}
+          {result === "ongoing" && (
+            <h3 style={{ color: "#007bff" }}>
+              Current Turn: {currentPlayer === "R" ? "Red" : "Yellow"}
+            </h3>
+          )}
+
+          {/* Winner shows after game ends */}
+          {winner && (
+            <h2 style={{ color: "green" }}>
+              {winner === "draw" ? "It’s a draw!" : "Winner: " + winner}
+            </h2>
+          )}
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(7, 50px)",
-              gap: 2,
+              gridTemplateColumns: "repeat(7, 60px)",
+              gap: 5,
+              justifyContent: "center",
+              marginTop: 20,
             }}
           >
             {board.map((row, rIdx) =>
-              row.map((cell, cIdx) => (
-                <div
-                  key={`${rIdx}-${cIdx}`}
-                  onClick={() => handleClick(cIdx)}
-                  style={{
-                    width: 50,
-                    height: 50,
-                    border: "1px solid black",
-                    borderRadius: 5,
-                    backgroundColor:
-                      cell === "R"
-                        ? "red"
-                        : cell === "Y"
-                        ? "yellow"
-                        : "white",
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    cursor:
-                      !ws ||
-                      result !== "ongoing" ||
-                      currentPlayer !== myColor
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                />
-              ))
+              row.map((cell, cIdx) => {
+                const key = rIdx + "," + cIdx;
+                const highlight = winCellKeys.includes(key);
+                return (
+                  <div
+                    key={key}
+                    onClick={() => handleClick(cIdx)}
+                    style={{
+                      width: 60,
+                      height: 60,
+                      borderRadius: "10px",
+                      border: highlight
+                        ? "4px solid #00E676"
+                        : "1px solid black",
+                      backgroundColor:
+                        cell === "R"
+                          ? "red"
+                          : cell === "Y"
+                          ? "yellow"
+                          : "#eee",
+                      cursor:
+                        currentPlayer === myColor && result === "ongoing"
+                          ? "pointer"
+                          : "not-allowed",
+                    }}
+                  ></div>
+                );
+              })
             )}
           </div>
         </div>

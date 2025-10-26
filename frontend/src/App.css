@@ -1,24 +1,173 @@
+/* =====================
+   General App Styling
+===================== */
 .App {
   text-align: center;
-}
-
-.App-logo {
-  animation: App-logo-spin infinite 20s linear;
-  height: 80px;
-}
-
-.App-header {
-  background-color: #222;
-  height: 150px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   padding: 20px;
-  color: white;
+  transition: background 0.5s ease-in-out;
 }
 
-.App-intro {
-  font-size: large;
+/* =====================
+   Logo Styling
+===================== */
+.App-logo {
+  animation: App-logo-spin 20s linear infinite, App-logo-scale 3s ease-in-out infinite alternate;
+  height: 100px;
+  margin-top: 20px;
 }
 
 @keyframes App-logo-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@keyframes App-logo-scale {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* =====================
+   Header Styling
+===================== */
+.App-header {
+  background: linear-gradient(90deg, #ff758c, #ff7eb3);
+  height: 180px;
+  padding: 20px;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  margin-bottom: 30px;
+  text-shadow: 1px 1px 5px rgba(0,0,0,0.3);
+  width: 100%;
+  max-width: 600px;
+}
+
+/* =====================
+   Intro / Description
+===================== */
+.App-intro {
+  font-size: 1.3rem;
+  color: #333;
+  background: rgba(255,255,255,0.6);
+  padding: 10px 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  margin-bottom: 40px;
+  transition: transform 0.3s ease;
+}
+
+.App-intro:hover {
+  transform: scale(1.05);
+}
+
+/* =====================
+   Buttons
+===================== */
+button {
+  background: linear-gradient(90deg, #ff758c, #ff7eb3);
+  border: none;
+  color: white;
+  padding: 12px 25px;
+  font-size: 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  transition: all 0.3s ease;
+  margin: 5px;
+}
+
+button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+}
+
+/* =====================
+   Game Board
+===================== */
+.board {
+  display: grid;
+  grid-template-columns: repeat(7, 60px);
+  grid-template-rows: repeat(6, 60px);
+  gap: 10px;
+  background: linear-gradient(180deg, #199bbf, #0072ff);
+  padding: 20px;
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  justify-content: center;
+  margin-bottom: 40px;
+}
+
+/* Individual Cell */
+.cell {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #e0e0e0;
+  box-shadow: inset 0 4px 6px rgba(0,0,0,0.2);
+  transition: background 0.3s, transform 0.2s;
+  cursor: pointer;
+}
+
+/* Hover effect for available cells */
+.cell:hover {
+  transform: scale(1.1);
+  box-shadow: inset 0 4px 6px rgba(0,0,0,0.3), 0 0 10px rgba(255,255,255,0.5);
+}
+
+/* Player pieces */
+.cell.red {
+  background: radial-gradient(circle at 30% 30%, #bb2635, #c10000);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+.cell.yellow {
+  background: radial-gradient(circle at 30% 30%, #ffd700, #ffa500);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+/* Winning cells highlight */
+.cell.win {
+  animation: win-flash 1s infinite alternate;
+}
+
+@keyframes win-flash {
+  0% { box-shadow: 0 0 10px 5px rgba(255,255,0,0.7); }
+  100% { box-shadow: 0 0 20px 10px rgba(255,0,0,0.7); }
+}
+
+/* =====================
+   Responsive Design
+===================== */
+@media (max-width: 500px) {
+  .board {
+    grid-template-columns: repeat(7, 40px);
+    grid-template-rows: repeat(6, 40px);
+    gap: 6px;
+  }
+
+  .cell {
+    width: 40px;
+    height: 40px;
+  }
+
+  .App-header {
+    height: 140px;
+    padding: 15px;
+  }
+
+  .App-intro {
+    font-size: 1rem;
+  }
 }

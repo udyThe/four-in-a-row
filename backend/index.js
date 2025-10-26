@@ -1,342 +1,241 @@
 const WebSocket = require("ws");
-
 const wss = new WebSocket.Server({ port: 8080 });
 
-// Waiting player queue
 let waitingPlayer = null;
-
-// Active games: { gameId: { board, players, currentPlayer, disconnected } }
 let games = {};
 let gameIdCounter = 1;
 
 // Create empty 7x6 board
 function createEmptyBoard() {
-  const rows = 6;
-  const cols = 7;
+  const rows = 6, cols = 7;
   return Array(rows).fill(null).map(() => Array(cols).fill(null));
 }
 
-// Check if player has won or draw
+// Return {result, cells: winningCells or []}
 function checkGameResult(board, player) {
-  const rows = board.length;
-  const cols = board[0].length;
-
+  const rows = board.length, cols = board[0].length;
+  // Helper to collect winning cells if found
+  const directions = [
+    { dr: 0, dc: 1 },  // Horizontal
+    { dr: 1, dc: 0 },  // Vertical
+    { dr: 1, dc: 1 },  // Diagonal \
+    { dr: -1, dc: 1 }, // Diagonal /
+  ];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (board[r][c] !== player) continue;
-
-      // Horizontal
-      if (
-        c + 3 < cols &&
-        board[r][c + 1] === player &&
-        board[r][c + 2] === player &&
-        board[r][c + 3] === player
-      )
-        return "win";
-
-      // Vertical
-      if (
-        r + 3 < rows &&
-        board[r + 1][c] === player &&
-        board[r + 2][c] === player &&
-        board[r + 3][c] === player
-      )
-        return "win";
-
-      // Diagonal /
-      if (
-        r - 3 >= 0 &&
-        c + 3 < cols &&
-        board[r - 1][c + 1] === player &&
-        board[r - 2][c + 2] === player &&
-        board[r - 3][c + 3] === player
-      )
-        return "win";
-
-      // Diagonal \
-      if (
-        r + 3 < rows &&
-        c + 3 < cols &&
-        board[r + 1][c + 1] === player &&
-        board[r + 2][c + 2] === player &&
-        board[r + 3][c + 3] === player
-      )
-        return "win";
+      for (const { dr, dc } of directions) {
+        let cells = [[r, c]];
+        for (let k = 1; k < 4; k++) {
+          const nr = r + dr * k, nc = c + dc * k;
+          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols || board[nr][nc] !== player) break;
+          cells.push([nr, nc]);
+        }
+        if (cells.length === 4) return { result: "win", cells };
+      }
     }
   }
-
-  if (board.every((row) => row.every((cell) => cell))) return "draw";
-  return "ongoing";
+  if (board.every(row => row.every(cell => cell))) return { result: "draw", cells: [] };
+  return { result: "ongoing", cells: [] };
 }
 
-// Check if placing a disc in column results in a win for given player
 function canWinNext(board, col, player) {
-  const tempBoard = board.map((row) => [...row]);
-  for (let row = tempBoard.length - 1; row >= 0; row--) {
-    if (!tempBoard[row][col]) {
-      tempBoard[row][col] = player;
-      const result = checkGameResult(tempBoard, player);
+  const temp = board.map(r => [...r]);
+  for (let r = temp.length - 1; r >= 0; r--) {
+    if (!temp[r][col]) {
+      temp[r][col] = player;
+      const { result } = checkGameResult(temp, player);
       return result === "win";
     }
   }
   return false;
 }
 
-// Get all available columns
 function availableColumns(board) {
   const cols = [];
-  for (let c = 0; c < 7; c++) {
-    if (board[0][c] === null) cols.push(c);
-  }
+  for (let c = 0; c < 7; c++) if (board[0][c] === null) cols.push(c);
   return cols;
 }
 
-// Function to create a new game
-function startGame(player1, player2) {
-  const gameId = gameIdCounter++;
+// Start new game and set up everything needed
+function startGame(p1, p2) {
+  const id = gameIdCounter++;
   const board = createEmptyBoard();
-
-  games[gameId] = {
-    board,
-    players: [player1, player2],
+  games[id] = {
+    id, board,
+    players: [p1, p2],
+    usernames: [p1.username, p2 ? p2.username : null],
     currentPlayer: "R",
     disconnected: {},
-    usernames: [player1.username, player2 ? player2.username : null],
+    status: "active",
+    winner: null,
+    winCells: []
   };
-
-  // Notify players that game has started -- assign colors
-  if (player1)
-    player1.send(
-      JSON.stringify({
-        type: "start",
-        gameId,
-        board,
-        currentPlayer: "R",
-        color: "R",
-        opponent:
-          player2?.username || "bot",
-      })
-    );
-  if (player2)
-    player2.send(
-      JSON.stringify({
-        type: "start",
-        gameId,
-        board,
-        currentPlayer: "R",
-        color: "Y",
-        opponent: player1.username,
-      })
-    );
-
-  console.log("Game started:", gameId);
-
-  // If player2 is null → start bot moves after player1
-  if (!player2) {
-    setTimeout(() => botMove(gameId), 1000);
-  }
+  if (p1)
+    p1.send(JSON.stringify({ type: "start", gameId: id, board, currentPlayer: "R", color: "R", opponent: p2?.username || "bot" }));
+  if (p2)
+    p2.send(JSON.stringify({ type: "start", gameId: id, board, currentPlayer: "R", color: "Y", opponent: p1.username }));
+  if (!p2) setTimeout(() => botMove(id), 1000);
 }
 
-// Improved bot logic
-function botMove(gameId) {
-  const game = games[gameId];
-  if (!game || game.players[1]) return; // Only bot if player2 is null
-  const board = game.board;
-  const botPlayer = "Y";
-  const humanPlayer = "R";
-
-  let chosenCol = null;
-  const cols = availableColumns(board);
-
-  // 1️⃣ Bot can win?
-  for (const col of cols) {
-    if (canWinNext(board, col, botPlayer)) {
-      chosenCol = col;
+// Bot logic
+function botMove(id) {
+  const game = games[id];
+  if (!game || game.status !== "active") return;
+  const { board } = game;
+  const bot = "Y", human = "R";
+  let chosen = null, cols = availableColumns(board);
+  for (const c of cols) if (canWinNext(board, c, bot)) chosen = c;
+  if (chosen === null) for (const c of cols) if (canWinNext(board, c, human)) chosen = c;
+  if (chosen === null) chosen = cols.includes(3) ? 3 : cols[Math.floor(Math.random() * cols.length)];
+  for (let r = board.length - 1; r >= 0; r--) {
+    if (!board[r][chosen]) {
+      board[r][chosen] = bot;
+      const { result, cells } = checkGameResult(board, bot);
+      if (result === "win" || result === "draw") {
+        endGame(id, result === "win" ? "bot" : "draw", cells);
+      }
+      game.currentPlayer = "R";
+      if (game.players[0]) {
+        game.players[0].send(JSON.stringify({
+          type: "update",
+          board, currentPlayer: game.currentPlayer, result, winner: result === "win" ? "bot" : null, winCells: cells
+        }));
+      }
       break;
     }
   }
+}
 
-  // 2️⃣ Block human win
-  if (chosenCol === null) {
-    for (const col of cols) {
-      if (canWinNext(board, col, humanPlayer)) {
-        chosenCol = col;
-        break;
-      }
+function endGame(id, winner, winCells = []) {
+  const game = games[id];
+  if (!game) return;
+  game.status = "ended";
+  game.winner = winner;
+  game.winCells = winCells;
+  console.log("ENDING GAME:", id, "WINNER:", winner);
+  game.players.forEach(p => {
+    if (p && p.readyState === p.OPEN) {
+      p.send(JSON.stringify({ type: "game_over", winner, winCells }));
     }
-  }
-
-  // 3️⃣ Otherwise pick center or random
-  if (chosenCol === null) {
-    if (cols.includes(3)) chosenCol = 3;
-    else chosenCol = cols[Math.floor(Math.random() * cols.length)];
-  }
-
-  // Place disc
-  for (let row = board.length - 1; row >= 0; row--) {
-    if (!board[row][chosenCol]) {
-      board[row][chosenCol] = botPlayer;
-      const result = checkGameResult(board, botPlayer);
-      game.currentPlayer = "R";
-
-      game.players[0]?.send(
-        JSON.stringify({
-          type: "update",
-          board,
-          currentPlayer: game.currentPlayer,
-          result,
-        })
-      );
-      return;
-    }
-  }
+  });
+  setTimeout(() => { delete games[id]; }, 1000); // Clean up quickly
 }
 
 wss.on("connection", (ws) => {
-  console.log("Player connected");
-
-  ws.on("message", (message) => {
-    const data = JSON.parse(message);
+  ws.on("message", (msg) => {
+    const data = JSON.parse(msg);
 
     if (data.type === "join") {
       ws.username = data.username;
-
-      // Check for reconnection
+      // Only reconnect allowed if game is active and for this username
       let reconnected = false;
       for (const [id, game] of Object.entries(games)) {
-        const idx = game.usernames.findIndex((u) => u === ws.username);
-        // If username matches, player was in this game
+        const idx = game.usernames.indexOf(ws.username);
         if (
           idx !== -1 &&
+          game.status === "active" &&
           game.disconnected[ws.username] &&
           Date.now() - game.disconnected[ws.username] < 30000
         ) {
           game.players[idx] = ws;
           delete game.disconnected[ws.username];
-          ws.send(
-            JSON.stringify({
-              type: "resume",
-              gameId: id,
-              board: game.board,
-              currentPlayer: game.currentPlayer,
-              result: checkGameResult(game.board, "R"),
-              color: idx === 0 ? "R" : "Y",
-              opponent:
-                game.usernames[idx === 0 ? 1 : 0] || "bot",
-            })
-          );
+          ws.send(JSON.stringify({
+            type: "resume",
+            gameId: id, board: game.board,
+            currentPlayer: game.currentPlayer,
+            result: "ongoing",
+            color: idx === 0 ? "R" : "Y",
+            opponent: game.usernames[idx === 0 ? 1 : 0] || "bot",
+            winCells: game.winCells
+          }));
           reconnected = true;
           break;
         }
       }
       if (reconnected) return;
-
-      // Normal matchmaking
+      // Otherwise: always new game with waiting/new
       if (!waitingPlayer) {
         waitingPlayer = ws;
-
-        // 10-second bot timer
         setTimeout(() => {
           if (waitingPlayer === ws) {
-            console.log("Starting game with bot for", ws.username);
             startGame(ws, null);
             waitingPlayer = null;
           }
         }, 10000);
       } else {
-        const player1 = waitingPlayer;
-        const player2 = ws;
+        startGame(waitingPlayer, ws);
         waitingPlayer = null;
-        startGame(player1, player2);
       }
     }
 
     if (data.type === "move") {
-      const { gameId, colIndex, player } = data;
-      const game = games[gameId];
-      if (!game) return;
-      if (game.currentPlayer !== player) return; // Prevent move out of turn
+      const game = games[data.gameId];
+      if (!game || game.status !== "active") return;
+      if (game.currentPlayer !== data.player) return;
+      // Prevent moves if win/draw just occurred!
+      const { result: r1 } = checkGameResult(game.board, "R");
+      const { result: r2 } = checkGameResult(game.board, "Y");
+      if (["win", "draw"].includes(r1) || ["win", "draw"].includes(r2)) return;
 
-      // Prevent moves after win/draw
-      if (["win", "draw"].includes(checkGameResult(game.board, "R")) ||
-        ["win", "draw"].includes(checkGameResult(game.board, "Y"))
-      ) return;
-
-      const board = game.board;
-
-      let placed = false;
-      for (let row = board.length - 1; row >= 0; row--) {
-        if (!board[row][colIndex]) {
-          board[row][colIndex] = player;
+      let placed = false, rowPlaced = -1;
+      for (let r = game.board.length - 1; r >= 0; r--) {
+        if (!game.board[r][data.colIndex]) {
+          game.board[r][data.colIndex] = data.player;
           placed = true;
+          rowPlaced = r;
           break;
         }
       }
-
       if (!placed) return;
 
-      const result = checkGameResult(board, player);
-      game.currentPlayer = player === "R" ? "Y" : "R";
-
-      // Broadcast update to both players
-      game.players.forEach((p) => {
-        if (p) {
-          p.send(
-            JSON.stringify({
-              type: "update",
-              board,
-              currentPlayer: game.currentPlayer,
-              result,
-            })
-          );
-        }
-      });
-
-      // If bot turn
-      if (
-        !game.players[1] &&
-        game.currentPlayer === "Y" &&
-        result === "ongoing"
-      ) {
-        setTimeout(() => botMove(gameId), 500);
+      const { result, cells } = checkGameResult(game.board, data.player);
+      if (result === "win") {
+        const winner = data.player === "R" ? game.usernames[0] : game.usernames[1];
+        game.players.forEach(p =>
+          p?.send(JSON.stringify({
+            type: "update", board: game.board, currentPlayer: game.currentPlayer,
+            result, winner, winCells: cells
+          }))
+        );
+        endGame(data.gameId, winner, cells);
+        return;
       }
+      if (result === "draw") {
+        game.players.forEach(p =>
+          p?.send(JSON.stringify({
+            type: "update", board: game.board, currentPlayer: game.currentPlayer,
+            result, winner: "draw", winCells: []
+          }))
+        );
+        endGame(data.gameId, "draw");
+        return;
+      }
+
+      game.currentPlayer = data.player === "R" ? "Y" : "R";
+      game.players.forEach(p =>
+        p?.send(JSON.stringify({
+          type: "update", board: game.board,
+          currentPlayer: game.currentPlayer, result, winCells: []
+        }))
+      );
+      // Bot turn
+      if (!game.players[1] && game.currentPlayer === "Y") setTimeout(() => botMove(data.gameId), 500);
     }
   });
 
   ws.on("close", () => {
-    console.log("Player disconnected");
-
-    // Find the player in any game
-    for (const [id, game] of Object.entries(games)) {
-      const idx = game.players.indexOf(ws);
-      if (idx !== -1) {
-        const username = ws.username;
-        if (username) {
-          game.disconnected[username] = Date.now();
-          setTimeout(() => {
-            // After 30s, if not reconnected, forfeit
-            if (
-              game.disconnected[username] &&
-              Date.now() - game.disconnected[username] >= 30000
-            ) {
-              const otherPlayerIdx = idx === 0 ? 1 : 0;
-              const winner =
-                (game.players[otherPlayerIdx] &&
-                  game.players[otherPlayerIdx].username) ||
-                "bot";
-              // Notify both players if connected
-              game.players.forEach((p) => {
-                if (p && p.readyState === p.OPEN) {
-                  p.send(
-                    JSON.stringify({ type: "forfeit", winner })
-                  );
-                }
-              });
-              delete games[id];
-            }
-          }, 30000);
-        }
-        break;
+    for (const [id, g] of Object.entries(games)) {
+      const idx = g.players.indexOf(ws);
+      if (idx !== -1 && g.status === "active") {
+        g.disconnected[ws.username] = Date.now();
+        setTimeout(() => {
+          if (g.disconnected[ws.username] && g.status === "active") {
+            const otherIdx = idx === 0 ? 1 : 0;
+            const winner = g.usernames[otherIdx] || "bot";
+            endGame(id, winner);
+          }
+        }, 30000);
       }
     }
   });
