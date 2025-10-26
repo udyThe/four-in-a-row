@@ -9,7 +9,7 @@ app.use(express.json());
 app.use(cors());
 
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ port: 8080  });
 
 let waitingPlayer = null;
 let games = {};

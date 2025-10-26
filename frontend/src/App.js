@@ -14,8 +14,12 @@ function App() {
   const [winner, setWinner] = useState(null);
   const [winCells, setWinCells] = useState([]);
 
-  const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:8080";
-
+  const WS_URL =
+  process.env.REACT_APP_WS_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "wss://four-in-a-row-backend-mwjq.onrender.com"
+    : "ws://localhost:8080");
+    
   const connect = () => {
     if (!username) return alert("Enter username first");
     const socket = new WebSocket(WS_URL);

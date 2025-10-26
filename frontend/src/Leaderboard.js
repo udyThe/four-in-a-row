@@ -2,14 +2,17 @@ import React, { useEffect, useState } from "react";
 
 function Leaderboard({ refreshTrigger }) {
   const [data, setData] = useState([]);
-  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
+  const API_BASE =
+    process.env.NODE_ENV === "production"
+      ? "https://four-in-a-row-backend-mwjq.onrender.com"
+      : "http://localhost:3001";
 
   useEffect(() => {
-    fetch(`${API_URL}/leaderboard`)
+    fetch(`${API_BASE}/leaderboard`)
       .then(res => res.json())
       .then(setData)
       .catch(console.error);
-  }, [refreshTrigger]); // Refreshes on game winner change
+  }, [refreshTrigger]);
 
   return (
     <div style={{ marginTop: 30 }}>
