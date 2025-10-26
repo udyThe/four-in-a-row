@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "./App.css";
+import './App.css';
 import Leaderboard from "./Leaderboard";
 
 function App() {
@@ -14,9 +14,11 @@ function App() {
   const [winner, setWinner] = useState(null);
   const [winCells, setWinCells] = useState([]);
 
+  const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:8080";
+
   const connect = () => {
     if (!username) return alert("Enter username first");
-    const socket = new WebSocket("ws://localhost:3001");
+    const socket = new WebSocket(WS_URL);
 
     socket.onopen = () => {
       socket.send(JSON.stringify({ type: "join", username }));
@@ -154,7 +156,7 @@ function App() {
             )}
           </div>
 
-          {/* Leaderboard displayed below grid */}
+          {/* Pass winner as refreshTrigger to reload leaderboard on game finish */}
           <Leaderboard refreshTrigger={winner} />
         </div>
       )}

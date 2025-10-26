@@ -2,13 +2,14 @@ import React, { useEffect, useState } from "react";
 
 function Leaderboard({ refreshTrigger }) {
   const [data, setData] = useState([]);
+  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
   useEffect(() => {
-    fetch("http://localhost:3001/leaderboard")
+    fetch(`${API_URL}/leaderboard`)
       .then(res => res.json())
       .then(setData)
       .catch(console.error);
-  }, [refreshTrigger]); // refresh every time match ends
+  }, [refreshTrigger]); // Refreshes on game winner change
 
   return (
     <div style={{ marginTop: 30 }}>
