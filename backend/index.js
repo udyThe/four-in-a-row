@@ -123,11 +123,21 @@ function endGame(id, winner, winCells = []) {
   const player2 = game.usernames[1] || "bot";
   recordCompletedGame(player1, player2, winner).catch(console.error);
 
-  game.players.forEach(p => {
-    if (p && p.readyState === p.OPEN) {
-      p.send(JSON.stringify({ type: "game_over", winner, winCells }));
-    }
-  });
+  // ✅ Fetch updated leaderboard and send to all players
+  getLeaderboard()
+    .then((updatedLeaderboard) => {
+      game.players.forEach(p => {
+        if (p && p.readyState === p.OPEN) {
+          p.send(JSON.stringify({ 
+            type: "game_over", 
+            winner, 
+            winCells, 
+            leaderboard: updatedLeaderboard  // ← send leaderboard here
+          }));
+        }
+      });
+    })
+    .catch(console.error);
 
   setTimeout(() => { delete games[id]; }, 1000);
 }

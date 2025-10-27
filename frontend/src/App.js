@@ -161,7 +161,7 @@ function App() {
           </div>
 
           {/* Pass winner as refreshTrigger to reload leaderboard on game finish */}
-          <Leaderboard refreshTrigger={winner} />
+          <Leaderboard refreshTrigger={winner} ws={ws} />
         </div>
       )}
     </div>

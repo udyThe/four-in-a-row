@@ -1,18 +1,32 @@
 import React, { useEffect, useState } from "react";
 
-function Leaderboard({ refreshTrigger }) {
+function Leaderboard({ refreshTrigger, ws }) {
   const [data, setData] = useState([]);
   const API_BASE =
     process.env.NODE_ENV === "production"
       ? "https://four-in-a-row-backend-mwjq.onrender.com"
       : "http://localhost:3001";
 
+  // Fetch initially
   useEffect(() => {
     fetch(`${API_BASE}/leaderboard`)
       .then(res => res.json())
       .then(setData)
       .catch(console.error);
   }, [refreshTrigger]);
+
+  // Listen for WebSocket leaderboard updates
+  useEffect(() => {
+    if (!ws) return;
+    const handler = (msg) => {
+      const dataMsg = JSON.parse(msg.data);
+      if (dataMsg.type === "game_over" && dataMsg.leaderboard) {
+        setData(dataMsg.leaderboard);
+      }
+    };
+    ws.addEventListener("message", handler);
+    return () => ws.removeEventListener("message", handler);
+  }, [ws]);
 
   return (
     <div style={{ marginTop: 30 }}>
